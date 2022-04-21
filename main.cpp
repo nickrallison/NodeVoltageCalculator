@@ -13,4 +13,5 @@ int main()
     sys.PrintNodesConnects();
     sys.PrintIntermediateVecs();
     sys.PrintVoltages();
+    sys.PrintNewtonFunc();
 }
