@@ -3,30 +3,26 @@
 
 int main()
 {
-    System sys(3);
-    sys.Resistor(0,1,5);
-    sys.Resistor(1,2,5);
-    sys.VoltSource(2,0,5);
-    //sys.Diode(1, 2, 0.7);
-    sys.GND(2);
+    System sys(4);
+
+    sys.GND(0);
+    sys.VoltSource(2,1,5);
+    sys.Resistor(0,1,1);
+    sys.Resistor(0,1,1);
+    sys.Resistor(0,3,1);
+    sys.Resistor(1,3,2);
+    sys.Diode(3, 2, 1);
+
     sys.FillAll();
-    for (int i = 0; i < 4; i++) {
-        sys.NodeVoltages(i) = i;
-    }
-    for (int i = 0; i < 4; i++) {
-        sys.UpdateMatrices();
+    sys.PrintIntermediateVecs();
 
-        sys.IterateVoltages();
-        sys.UpdateMatrices();
-        cout << endl;
-        sys.PrintJacobian();
-        sys.PrintNewtonFunc();
+    sys.IterateVoltages();
 
-    }
-        sys.PrintVoltages();
-        sys.PrintJacobian();
-        sys.PrintJacobianInv();
-        sys.PrintNewtonFunc();
+
+    sys.PrintIntermediateVecs();
+    sys.PrintJacobian();
+    sys.PrintNewtonFunc();
+    sys.PrintVoltages();
 
 
 /*
@@ -38,5 +34,5 @@ int main()
     sys.PrintJacobianInv();
 
 */
-    sys.PrintIntermediateVecs();
+
 }

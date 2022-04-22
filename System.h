@@ -48,17 +48,30 @@ public:
         calcJacobian();
     }
 
-    void IterateVoltages() {
+    int IterateVoltages() {
+        this->UpdateMatrices();
         VectorXd delta = this->JacobianInv * this->NewtonFunc;
-        cout << "Delta: " << '\n' << delta << endl;
-        cout << "Voltages: " << '\n' << this->NodeVoltages << endl;
         this->NodeVoltages = this->NodeVoltages - delta;
+        for (int i = 0; i < nodes; i++) {
+            if (!nodeVec[i].src && nodeVec[i].diodes) {
+                for (int j = 0; j < nodeVec[i].connections.size(); j++) {
+                    PrintIntermediateVecs();
+                    if (this->DiodeLogic(nodeVec[i].connections[j])) {
+                        nodeVec[i].connections.erase(nodeVec[i].connections.begin() + j);
+                        FillAll();
+                        return IterateVoltages();
+                    }
+                }
+            }
+        }
+
         for (int i = 0; i < this->GNDVec.size(); i++) {
             this->NodeVoltages(this->GNDVec[i]) = 0;
         }
         for (int i = 0; i < this->VSVec.size(); i++) {
             this->NodeVoltages(this->VSVec[i].node1) = this->NodeVoltages(this->VSVec[i].node0) + this->VSVec[i].value;
         }
+        return 0;
     }
 
     void calcNewtonFunc() {
@@ -92,19 +105,20 @@ public:
         for (int i = 0; i < this->nodes; i++) {
             for (int j = 0; j < this->nodes; j++) {
                 double value = 0;
-                if (i < countToV) {
+                if (i < countToV) {                             //GND Levels of jacobian
                     value += this->derivativeGND(j);
                 }
 
-                if (countToV <= i && i < countToRD) {
+                if (countToV <= i && i < countToRD) {           //SRC Levels of Jacobian
                     value += this->derivativeV(this->VSVec[i - countToV], j);
                 }
                 if (countToRD <= i) {
-                    for (int k = 0; k < this->RDVec[i - countToRD].size(); k++) {
-                        value += derivativeRD(this->RDVec[i - countToRD][k], j);
+                    for (int k = 0; k < this->RDVec[i - countToRD].size(); k++) {           //Impedance Level of Jacobian
+                        if (this->RDVec[i - countToRD][k].type == "R") {
+                            value += derivativeRD(this->RDVec[i - countToRD][k], j);
+                        }
                     }
                 }
-
                 this->Jacobian(i, j) = value;
             }
         }
@@ -119,14 +133,6 @@ public:
         if (connection.type == "R") {
             return (deltaV / connection.value);
         }
-        if (connection.type == "RD") {
-            double value = (connection.value * (exp(-1 * (deltaV / 0.026)) - 1));
-            return value;
-        }
-        if (connection.type == "FD") {
-            return (connection.value * (exp(deltaV / 0.026) - 1));
-        }
-
     }
 
     double derivativeGND(int node) {
@@ -159,26 +165,11 @@ public:
             return (-1 / connection.value);
         }
 
-        if (connection.type == "FD") {
-            int value = ((evaluate(connection) + connection.value) / 0.026);
-            if (connection.node0 == node) {
-                return value;
-            }
-            return (-1 * value);
-        }
-
-        if (connection.type == "RD") {
-            int value = ((evaluate(connection) + connection.value) / 0.026);
-            if (connection.node0 == node) {
-                return (-1 * value);
-            }
-            return value;
-        }
-
     }
 
 
     void FillGNDVec() {
+        this->GNDVec.clear();
         for (int i = 0; i < nodes; i++) {
             if (this->nodeVec[i].gnd) {
                 this->GNDVec.push_back(i);
@@ -187,8 +178,9 @@ public:
     }
 
     void FillVSRCVec() {
+        this->VSVec.clear();
         for (int i = 0; i < nodes; i++) {
-            for (int j = i; j < this->nodeVec[i].connections.size(); j++) {
+            for (int j = 0; j < this->nodeVec[i].connections.size(); j++) {
                 if (this->nodeVec[i].connections[j].type == "FVS") {
                     this->VSVec.push_back(this->nodeVec[i].connections[j]);
                 }
@@ -197,6 +189,7 @@ public:
     }
 
     void FillRDVec() {
+        this->RDVec.clear();
         vector<connect> intermediateVec;
         for (int i = 0; i < nodes; i++) {
             intermediateVec.clear();
@@ -223,7 +216,18 @@ public:
      *      Then we append R and Diode Eqs
      */
 
-
+    int DiodeLogic(connect diodeConnection) {
+        double deltaVoltage = this->NodeVoltages(diodeConnection.node0) - this->NodeVoltages(diodeConnection.node1);
+        if (diodeConnection.type == "FD" && deltaVoltage < diodeConnection.value) {
+            this->VoltSource(diodeConnection.node1, diodeConnection.node0, -diodeConnection.value);
+            return 1;
+        }
+        if (diodeConnection.type == "RD" && deltaVoltage > -diodeConnection.value) {
+            this->VoltSource(diodeConnection.node0, diodeConnection.node1, -diodeConnection.value);
+            return 1;
+        }
+        return 0;
+    }
 
     void Resistor(int node0, int node1, double value) {
         this->nodeVec[node0].AddResistor(node1, value);
@@ -231,8 +235,8 @@ public:
     }
 
     void Diode(int node0, int node1, double value) {
-        this->nodeVec[node0].AddDiode(node1, 1 / exp(value / 0.026 - 1), "FD");
-        this->nodeVec[node1].AddDiode(node0, 1 / exp(value / 0.026 - 1), "RD");
+        this->nodeVec[node0].AddDiode(node1, value, "FD");
+        this->nodeVec[node1].AddDiode(node0, value, "RD");
     }
 
     void VoltSource(int node0, int node1, double value) {

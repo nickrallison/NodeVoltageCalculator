@@ -34,6 +34,7 @@ public:
     vector<connect> connections;
     bool gnd = false;
     bool src = false;
+    int diodes = 0;
 
     Node(int node) {
         this->nodeValue = node;
@@ -44,9 +45,10 @@ public:
     }
     void AddDiode(int node, double value, string direction) {
         this->connections.push_back(connect(this->nodeValue, node, direction, value));
+        this->diodes++;
     }
     void AddVSource(int node, double value, string direction) {
-        this->connections.push_back(connect(this->nodeValue, node, direction, value));
+        this->connections.insert(this->connections.begin(), connect(this->nodeValue, node, direction, value));
     }
 
     void printConnect() {
