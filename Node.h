@@ -22,6 +22,10 @@ public:
         this->type = type;
         this->value = value;
     }
+
+    void printConnect() {
+        cout << "Original Node: " << this->node0 << ", Connected Node: " << this->node1 << ", Type: " << this->type << ", Value: " << this->value << endl;
+    }
 };
 
 class Node {
@@ -49,7 +53,7 @@ public:
         cout << "Node: " << this->nodeValue << endl;
         cout << "Ground: " << this->gnd << endl;
         for (int i = 0; i < this->connections.size(); i++) {
-            cout << "Connected Node: " << this->connections[i].node1 << ", Type: " << this->connections[i].type << ", Value: " << this->connections[i].value << endl;
+            this->connections[i].printConnect();
         }
         cout << endl;
     }

@@ -43,50 +43,136 @@ public:
 
     }
 
-    void IterateVoltages() {
+    void UpdateMatrices() {
         calcNewtonFunc();
         calcJacobian();
-        this->NodeVoltages = this->NodeVoltages - this->JacobianInv * this->NewtonFunc;
+    }
+
+    void IterateVoltages() {
+        VectorXd delta = this->JacobianInv * this->NewtonFunc;
+        cout << "Delta: " << '\n' << delta << endl;
+        cout << "Voltages: " << '\n' << this->NodeVoltages << endl;
+        this->NodeVoltages = this->NodeVoltages - delta;
+        for (int i = 0; i < this->GNDVec.size(); i++) {
+            this->NodeVoltages(this->GNDVec[i]) = 0;
+        }
+        for (int i = 0; i < this->VSVec.size(); i++) {
+            this->NodeVoltages(this->VSVec[i].node1) = this->NodeVoltages(this->VSVec[i].node0) + this->VSVec[i].value;
+        }
     }
 
     void calcNewtonFunc() {
         int count = 0;
 
         for (int i = 0; i < this->GNDVec.size(); i++) {
-            this->NewtonFunc(count) = NodeVoltages(GNDVec[i]);
+            int value = NodeVoltages(GNDVec[i]);
+            this->NewtonFunc(count) = value;
             count++;
         }
-
         for (int i = 0; i < this->VSVec.size(); i++) {
-            this->NewtonFunc(count) = NodeVoltages(VSVec[i].node1) - NodeVoltages(VSVec[i].node0) - VSVec[i].value;
+            int value = NodeVoltages(VSVec[i].node1) - NodeVoltages(VSVec[i].node0) - VSVec[i].value;
+            this->NewtonFunc(count) = value;
             count++;
         }
-
 
         for (int i = 0; i < this->RDVec.size(); i++) {
             this->NewtonFunc(count) = 0;
             for (int j = 0; j < this->RDVec[i].size(); j++) {
-                this->NewtonFunc(count) += evaluate(this->RDVec[i][j]);
-                count++;
+                double value = evaluate(this->RDVec[i][j]);
+                this->NewtonFunc(count) += value;
             }
             count++;
         }
     }
 
     void calcJacobian() {
+        int countToV = this->GNDVec.size();
+        int countToRD = countToV + this->VSVec.size();
+
+        for (int i = 0; i < this->nodes; i++) {
+            for (int j = 0; j < this->nodes; j++) {
+                double value = 0;
+                if (i < countToV) {
+                    value += this->derivativeGND(j);
+                }
+
+                if (countToV <= i && i < countToRD) {
+                    value += this->derivativeV(this->VSVec[i - countToV], j);
+                }
+                if (countToRD <= i) {
+                    for (int k = 0; k < this->RDVec[i - countToRD].size(); k++) {
+                        value += derivativeRD(this->RDVec[i - countToRD][k], j);
+                    }
+                }
+
+                this->Jacobian(i, j) = value;
+            }
+        }
+
+        this->JacobianInv = this->Jacobian.inverse();
+    }
+
+
+    double evaluate(connect connection) {
+        double deltaV = (this->NodeVoltages(connection.node0) - this->NodeVoltages(connection.node1));
+
+        if (connection.type == "R") {
+            return (deltaV / connection.value);
+        }
+        if (connection.type == "RD") {
+            double value = (connection.value * (exp(-1 * (deltaV / 0.026)) - 1));
+            return value;
+        }
+        if (connection.type == "FD") {
+            return (connection.value * (exp(deltaV / 0.026) - 1));
+        }
 
     }
 
-    double evaluate(connect connection) {
+    double derivativeGND(int node) {
+        if (node == this->GNDVec[0]) {
+            return 1;
+        }
+        return 0;
+    }
+
+    double derivativeV(connect connection, int node) {
+        if (node != connection.node0 && node != connection.node1) {
+            return 0;
+        }
+        int value = 1;
+        if (node == connection.node0 && connection.value >= 0 || node == connection.node1 && connection.value <= 0) {
+            value *= -1;
+        }
+        return value;
+    }
+
+    double derivativeRD(connect connection, int node) {
+        if (node != connection.node0 && node != connection.node1) {
+            return 0;
+        }
 
         if (connection.type == "R") {
-            return (this->NodeVoltages(connection.node0) - this->NodeVoltages(connection.node1)) * connection.value;
+            if (connection.node0 == node) {
+                return (1 / connection.value);
+            }
+            return (-1 / connection.value);
         }
-        if (connection.type == "RD") {
-            return connection.value * (exp(-(this->NodeVoltages(connection.node0) - this->NodeVoltages(connection.node1)) / 0.026) - 1);
-        }
+
         if (connection.type == "FD") {
-            return connection.value * (exp((this->NodeVoltages(connection.node0) - this->NodeVoltages(connection.node1)) / 0.026) - 1);
+            int value = ((evaluate(connection) + connection.value) / 0.026);
+            if (connection.node0 == node) {
+                return value;
+            }
+            return (-1 * value);
+        }
+
+        if (connection.type == "RD") {
+            int value = ((evaluate(connection) + connection.value) / 0.026);
+            if (connection.node0 == node) {
+                return (-1 * value);
+            }
+            return value;
         }
 
     }
@@ -205,6 +291,16 @@ public:
         }
         cout << endl;
     }
+
+    void PrintJacobian() {
+        cout << this->Jacobian << endl << endl;
+    }
+
+    void PrintJacobianInv() {
+        cout << this->JacobianInv << endl << endl;
+    }
+
+
 };
 
 
