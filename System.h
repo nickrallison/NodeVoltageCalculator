@@ -6,304 +6,153 @@
 #define NONLINEAREQUATIONSOLVER_SYSTEM_H
 
 #include "./Eigen/Dense"
-#include "Node.h"
 #include <cmath>
+#include "node.h"
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
 class System {
 public:
-    int nodes;
+    int nodeNum;
 
-    vector<Node> nodeVec;
-    vector<int> GNDVec;
-    vector<connect> VSVec;
-    vector<vector<connect>> RDVec;
-
-    VectorXd NodeVoltages;
-    MatrixXd Jacobian;
-    MatrixXd JacobianInv;
-    VectorXd NewtonFunc;
+    std::vector<node> nodes;                        //node 0 is ground
+    std::vector<std::vector<double>> impedanceVec;     //[val, n1, n2]
+    std::vector<std::vector<double>> voltageVec;       //[val, n1, n2]
+    std::vector<std::vector<double>> currentVec;       //[val, n1, n2]
+    std::vector<std::vector<double>> vcvoltageVec;     //[val, n1, n2, controlledn1, controlledn2]
+    //std::vector<std::vector<double>> ccvoltageVec;   //[val, n1, n2, controlledn1, controlledn2]
+    std::vector<std::vector<double>> vccurrentVec;     //[val, n1, n2, controlledn1, controlledn2]
+    //std::vector<std::vector<double>> cccurrentVec;   //[val, n1, n2, controlledn1, controlledn2]
 
     System(int nodeNum) {
-        this->nodes = nodeNum;
+        this->nodeNum = nodeNum;
         for (int i = 0; i < nodeNum; i++) {
-            this->nodeVec.push_back(Node(i));
-        }
-
-        this->NodeVoltages.resize(nodeNum);
-        this->Jacobian.resize(nodeNum,nodeNum);
-        this->JacobianInv.resize(nodeNum,nodeNum);
-        this->NewtonFunc.resize(nodeNum);
-
-        for (int i = 0; i < nodes; i++) {
-            this->NodeVoltages(i) = 0;
-        }
-
-    }
-
-    void UpdateMatrices() {
-        calcNewtonFunc();
-        calcJacobian();
-    }
-
-    int IterateVoltages() {
-        this->UpdateMatrices();
-        VectorXd delta = this->JacobianInv * this->NewtonFunc;
-        this->NodeVoltages = this->NodeVoltages - delta;
-        for (int i = 0; i < nodes; i++) {
-            if (!nodeVec[i].src && nodeVec[i].diodes) {
-                for (int j = 0; j < nodeVec[i].connections.size(); j++) {
-                    PrintIntermediateVecs();
-                    if (this->DiodeLogic(nodeVec[i].connections[j])) {
-                        nodeVec[i].connections.erase(nodeVec[i].connections.begin() + j);
-                        FillAll();
-                        return IterateVoltages();
-                    }
-                }
-            }
-        }
-
-        for (int i = 0; i < this->GNDVec.size(); i++) {
-            this->NodeVoltages(this->GNDVec[i]) = 0;
-        }
-        for (int i = 0; i < this->VSVec.size(); i++) {
-            this->NodeVoltages(this->VSVec[i].node1) = this->NodeVoltages(this->VSVec[i].node0) + this->VSVec[i].value;
-        }
-        return 0;
-    }
-
-    void calcNewtonFunc() {
-        int count = 0;
-
-        for (int i = 0; i < this->GNDVec.size(); i++) {
-            int value = NodeVoltages(GNDVec[i]);
-            this->NewtonFunc(count) = value;
-            count++;
-        }
-        for (int i = 0; i < this->VSVec.size(); i++) {
-            int value = NodeVoltages(VSVec[i].node1) - NodeVoltages(VSVec[i].node0) - VSVec[i].value;
-            this->NewtonFunc(count) = value;
-            count++;
-        }
-
-        for (int i = 0; i < this->RDVec.size(); i++) {
-            this->NewtonFunc(count) = 0;
-            for (int j = 0; j < this->RDVec[i].size(); j++) {
-                double value = evaluate(this->RDVec[i][j]);
-                this->NewtonFunc(count) += value;
-            }
-            count++;
+            node temp(i);
+            this->nodes.push_back(temp);
         }
     }
 
-    void calcJacobian() {
-        int countToV = this->GNDVec.size();
-        int countToRD = countToV + this->VSVec.size();
-
-        for (int i = 0; i < this->nodes; i++) {
-            for (int j = 0; j < this->nodes; j++) {
-                double value = 0;
-                if (i < countToV) {                             //GND Levels of jacobian
-                    value += this->derivativeGND(j);
-                }
-
-                if (countToV <= i && i < countToRD) {           //SRC Levels of Jacobian
-                    value += this->derivativeV(this->VSVec[i - countToV], j);
-                }
-                if (countToRD <= i) {
-                    for (int k = 0; k < this->RDVec[i - countToRD].size(); k++) {           //Impedance Level of Jacobian
-                        if (this->RDVec[i - countToRD][k].type == "R") {
-                            value += derivativeRD(this->RDVec[i - countToRD][k], j);
-                        }
-                    }
-                }
-                this->Jacobian(i, j) = value;
-            }
-        }
-
-        this->JacobianInv = this->Jacobian.inverse();
+    void addImpedance(double Z, int node0, int node1) {
+        std::vector<double> vectemp = {Z, double(node0), double(node1)};
+        this->impedanceVec.push_back(vectemp);
+        this->nodes[node0].addImpedance(Z, node1);
+        this->nodes[node1].addImpedance(Z, node0);
     }
 
-
-    double evaluate(connect connection) {
-        double deltaV = (this->NodeVoltages(connection.node0) - this->NodeVoltages(connection.node1));
-
-        if (connection.type == "R") {
-            return (deltaV / connection.value);
-        }
+    void addVoltageSource(double V, int node0, int node1) { // node0  --- +++  node1
+        std::vector<double> vectemp = {V, double(node0), double(node1)};
+        this->voltageVec.push_back(vectemp);
+        this->nodes[node0].addVoltageSource(V, node1);
+        this->nodes[node1].addVoltageSource(-V, node0);
     }
 
-    double derivativeGND(int node) {
-        if (node == this->GNDVec[0]) {
-            return 1;
-        }
-        return 0;
+    void addCurrentSource(double I, int node0, int node1) { // node0  --->>>  node1
+        std::vector<double> vectemp = {I, double(node0), double(node1)};
+        this->currentVec.push_back(vectemp);
+        this->nodes[node0].addCurrentSource(I, node1);
+        this->nodes[node1].addCurrentSource(-I, node0);
     }
 
-    double derivativeV(connect connection, int node) {
-        if (node != connection.node0 && node != connection.node1) {
-            return 0;
-        }
-        int value = 1;
-        if (node == connection.node0 && connection.value >= 0 || node == connection.node1 && connection.value <= 0) {
-            value *= -1;
-        }
-        return value;
+    void addVCVoltageSource(double gain, int node0, int node1, int control0, int control1) {
+        std::vector<double> vectemp = {gain, double(node0), double(node1), double(control0), double(control1)};
+        this->vcvoltageVec.push_back(vectemp);
+        this->nodes[node0].addVCVoltageSource(gain, node1, control0, control1);
+        this->nodes[node1].addVCVoltageSource(-gain, node0, control0, control1);
     }
 
-    double derivativeRD(connect connection, int node) {
-        if (node != connection.node0 && node != connection.node1) {
-            return 0;
-        }
-
-        if (connection.type == "R") {
-            if (connection.node0 == node) {
-                return (1 / connection.value);
-            }
-            return (-1 / connection.value);
-        }
-
+    /*
+    void addCCVoltageSource(double gain, int node0, int node1, int control0, int control1) {
+        std::vector<double> vectemp = {gain, double(node0), double(node1), double(control0), double(control1)};
+        this->ccvoltageVec.push_back(vectemp);
     }
-
-
-    void FillGNDVec() {
-        this->GNDVec.clear();
-        for (int i = 0; i < nodes; i++) {
-            if (this->nodeVec[i].gnd) {
-                this->GNDVec.push_back(i);
-            }
-        }
-    }
-
-    void FillVSRCVec() {
-        this->VSVec.clear();
-        for (int i = 0; i < nodes; i++) {
-            for (int j = 0; j < this->nodeVec[i].connections.size(); j++) {
-                if (this->nodeVec[i].connections[j].type == "FVS") {
-                    this->VSVec.push_back(this->nodeVec[i].connections[j]);
-                }
-            }
-        }
-    }
-
-    void FillRDVec() {
-        this->RDVec.clear();
-        vector<connect> intermediateVec;
-        for (int i = 0; i < nodes; i++) {
-            intermediateVec.clear();
-            if (!(this->nodeVec[i].src)) {
-                vector<connect> intermediateVec = {};
-                for (int j = 0; j < this->nodeVec[i].connections.size(); j++) {
-                    intermediateVec.push_back(this->nodeVec[i].connections[j]);
-                }
-                this->RDVec.push_back(intermediateVec);
-            }
-        }
-    }
-
-    void FillAll() {
-        FillGNDVec();
-        FillVSRCVec();
-        FillRDVec();
-    }
-
-
-    /*      f(X) vec
-     *      First is Gnd
-     *      Then we have V sources
-     *      Then we append R and Diode Eqs
      */
 
-    int DiodeLogic(connect diodeConnection) {
-        double deltaVoltage = this->NodeVoltages(diodeConnection.node0) - this->NodeVoltages(diodeConnection.node1);
-        if (diodeConnection.type == "FD" && deltaVoltage < diodeConnection.value) {
-            this->VoltSource(diodeConnection.node1, diodeConnection.node0, -diodeConnection.value);
-            return 1;
-        }
-        if (diodeConnection.type == "RD" && deltaVoltage > -diodeConnection.value) {
-            this->VoltSource(diodeConnection.node0, diodeConnection.node1, -diodeConnection.value);
-            return 1;
-        }
-        return 0;
+    void addVCCurrentSource(double gain, int node0, int node1, int control0, int control1) {
+        std::vector<double> vectemp = {gain, double(node0), double(node1), double(control0), double(control1)};
+        this->vccurrentVec.push_back(vectemp);
+        this->nodes[node0].addVCCurrentSource(gain, node1, control0, control1);
+        this->nodes[node1].addVCCurrentSource(-gain, node0, control0, control1);
     }
 
-    void Resistor(int node0, int node1, double value) {
-        this->nodeVec[node0].AddResistor(node1, value);
-        this->nodeVec[node1].AddResistor(node0, value);
+    /*
+    void addCCCurrentSource(double gain, int node0, int node1, int control0, int control1) {
+        std::vector<double> vectemp = {gain, double(node0), double(node1), double(control0), double(control1)};
+        this->cccurrentVec.push_back(vectemp);
     }
+    */
 
-    void Diode(int node0, int node1, double value) {
-        this->nodeVec[node0].AddDiode(node1, value, "FD");
-        this->nodeVec[node1].AddDiode(node0, value, "RD");
-    }
+    void calcVoltages() {
+        int rows = 0;
+        int cols = this->nodeNum;
+        Eigen::MatrixXd mat(rows, cols);
+        Eigen::VectorXd vec(rows);
 
-    void VoltSource(int node0, int node1, double value) {
-        this->nodeVec[node0].AddVSource(node1, value, "FVS");
-        this->nodeVec[node1].AddVSource(node0, value, "RVS");
-        this->nodeVec[node0].src = true;
-        this->nodeVec[node1].src = true;
-    }
+        rows++;                                 // GND Equation
+        mat.conservativeResize(rows, cols);
+        vec.conservativeResize(rows);
+        mat.row(rows - 1).setZero();
+        vec.row(rows - 1).setZero();
+        mat(rows - 1, 0) = 1;
 
-    void GND(int node) {
-        this->nodeVec[node].gnd = true;
-        this->nodeVec[node].src = true;
-    }
+        for (int i = 0; i < nodeNum; i++) {
+            if (!this->nodes[i].attachedToVoltage) {
+                rows++;                                 // Current Eqns
+                mat.conservativeResize(rows, cols);
+                vec.conservativeResize(rows);
+                mat.row(rows - 1).setZero();
+                vec.row(rows - 1).setZero();
 
-
-
-    void PrintNodesConnects() {
-        for (int i = 0; i < nodes; i++) {
-            nodeVec[i].printConnect();
-        }
-    }
-
-    void PrintIntermediateVecs() {
-        cout <<"GND Vec: " << endl;
-        for (int i = 0; i < this->GNDVec.size(); i++) {
-            cout << "Node: " << this->GNDVec[i] << endl;
-        }
-        cout << endl;
-
-        cout <<"VS Vec: " << endl;
-        for (int i = 0; i < this->VSVec.size(); i++) {
-            cout << "PrimeNode: " << this->VSVec[i].node0 << ", SecNode: " << this->VSVec[i].node1 << ", Type: " << this->VSVec[i].type << ", Value: " << this->VSVec[i].value << endl;
-        }
-        cout << endl;
-
-        cout <<"RD Vec: " << endl;
-        for (int i = 0; i < this->RDVec.size(); i++) {
-            for (int j = 0; j < this->RDVec[i].size(); j++) {
-                cout << "PrimeNode: " << this->RDVec[i][j].node0 << ", SecNode: " << this->RDVec[i][j].node1 << ", Type: " << this->RDVec[i][j].type << ", Value: " << this->RDVec[i][j].value << endl;
+                Eigen::VectorXd tempVec = this->nodes[i].returnCurrentEq(nodeNum);
+                for (int j = 0; j < nodeNum; j++) {
+                    mat(rows - 1, j) = tempVec(j);
+                }
+                vec(rows - 1) = tempVec(nodeNum);
             }
-            cout << endl;
         }
-        cout << endl;
-    }
 
-    void PrintVoltages() {
-        for (int i = 0; i < nodes; i++) {
-            cout << "Voltage " << i << ": " << this->NodeVoltages(i) << endl;
+        for (int i = 0; i < this->voltageVec.size(); i++) {
+            rows++;                                 // Static Voltage Eqn
+            mat.conservativeResize(rows, cols);
+            vec.conservativeResize(rows);
+            mat.row(rows - 1).setZero();
+            vec.row(rows - 1).setZero();
+
+            // {V, double(node0), double(node1)};
+            // node0  --- +++  node1
+
+            mat(rows - 1, int(this->voltageVec[i][2])) = 1;
+            mat(rows - 1, int(this->voltageVec[i][1])) = -1;
+            vec(rows - 1) = this->voltageVec[i][0];
         }
-        cout << endl;
-    }
 
-    void PrintNewtonFunc() {
-        for (int i = 0; i < nodes; i++) {
-            cout << "Value " << i << ": " << this->NewtonFunc(i) << endl;
+        for (int i = 0; i < this->vcvoltageVec.size(); i++) {
+            rows++;                                 // Controlled Voltage Eqn
+            mat.conservativeResize(rows, cols);
+            vec.conservativeResize(rows);
+            mat.row(rows - 1).setZero();
+            vec.row(rows - 1).setZero();
+
+            // {gain, double(node0), double(node1), double(control0), double(control1)};
+            // node0  --- +++  node1
+
+            mat(rows - 1, int(this->vcvoltageVec[i][1])) = 1;
+            mat(rows - 1, int(this->vcvoltageVec[i][2])) = -1;
+            mat(rows - 1, int(this->vcvoltageVec[i][3])) = -this->vcvoltageVec[i][0];
+            mat(rows - 1, int(this->vcvoltageVec[i][4])) = this->vcvoltageVec[i][0];
+
         }
-        cout << endl;
-    }
 
-    void PrintJacobian() {
-        cout << this->Jacobian << endl << endl;
+        for (int i = 0; i < mat.rows(); i++) {
+            for (int j = 0; j < mat.cols(); j++) {
+                std::cout << mat(i, j) << ' ';
+            }
+            std::cout << " = " << vec(i) << '\n';
+        }
+        std::cout << '\n';
+        Eigen::VectorXd x = mat.colPivHouseholderQr().solve(vec);
+        std::cout << "The solution is:\n" << x << std::endl;
     }
-
-    void PrintJacobianInv() {
-        cout << this->JacobianInv << endl << endl;
-    }
-
 
 };
 
