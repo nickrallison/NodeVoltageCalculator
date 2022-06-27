@@ -1,4 +1,4 @@
-# NodeVoltageCalculator
+# Node Voltage Calculator
 
 ## What it does:
 It is designed to a flexible implementation of a node voltage calculator implemented in C++, the goal was to compile this down to TI 84 ASM. 
@@ -20,4 +20,4 @@ The only things left to do are:
 
 ---
 
-The bottleneck is that implementing complex matrices on a TI-84 is much more [Difficult](https://www.youtube.com/watch?v=LVB3_ANZDGQ&ab_channel=MoVoltageMoPower "Example youtube video") than on a library built for it. So for any progress, the switch to using TI 84 matrices must be done first.
+The bottleneck is that implementing complex matrices on a TI-84 is much more [Difficult](https://www.youtube.com/watch?v=LVB3_ANZDGQ&ab_channel=MoVoltageMoPower "Example youtube video") than on a library built for it. So for any progress, the switch to using TI 84 matrices must be done first before implementing AC circuitry logic or progress will have to be reversed.
