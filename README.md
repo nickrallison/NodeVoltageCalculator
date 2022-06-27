@@ -8,7 +8,9 @@ This project is complete and implemented on a desktop, and on hold for a TI 84.
 
 ## What I learned:
 [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page "Eigen Homepage") - C++ Linear Algebra Library for solving variable complex systems of equations
+
 [CE Toolchain](https://ce-programming.github.io/toolchain/ "CE Toolchain Homepage") - A tool that is used to compile C++ to assembly used on the TI series of calculators and needed for more complex projects
+
 Electronics - A useful refresher on the basics of circuit analysis before I tutor it in the upcoming school year for the University of Calgary [PASS program](https://www.ucalgary.ca/student-services/student-success/learning-support/pass "PASS Program Homepage")
 
 ## Next Steps:
